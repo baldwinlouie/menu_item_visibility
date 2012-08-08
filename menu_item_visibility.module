@@ -35,24 +35,11 @@ function menu_item_visibility_translated_menu_link_alter(&$item, $map) {
     // @todo Convert this into a proper hook so modules can extend visibility.
     $item['visibility'] = menu_item_visibility_load($item['mlid']);
     if (!empty($item['visibility']['roles'])) {
-      // if user belongs to one role
-      if (count($user->roles) == 1) {
-        if (!array_intersect($item['visibility']['roles'], array_keys($user->roles))) {
-          $item['access'] = FALSE;
-        }
-      }
-      else {
-        // User has authenticated role, and something else
-        // remove the authenticated role, and run the array_interest again
-        $roles = array_keys($user->roles);
-        array_splice($roles, array_search(DRUPAL_AUTHENTICATED_RID, $roles), 1);
-        if (!array_intersect($item['visibility']['roles'], $roles)) {
-          $item['access'] = FALSE;
-        }
-      }
+      $item['access'] = _menu_item_check_visibility($item['visibility']['roles'], $user->roles);
     }
   }
 }
+
 
 /**
  * Load all visibility data for a menu link.
@@ -179,4 +166,60 @@ function menu_item_visibility_form_node_form_alter(&$form, &$form_state) {
     '#options' => array_map('check_plain', user_roles()),
     '#description' => t('Show this menu link only for the selected role(s). If you select no roles, the menu link will be visible to all users.'),
   );
+}
+
+/**
+ * Implements hook_node_access(). 
+ */
+function menu_item_visibility_node_access($node, $op, $account) {
+  // Going one step further with Menu item visibility.
+  // if the item is locked, then don't allow access to view the node
+  // if the user somehow knows their way to the url
+  switch ($op) {
+    case 'view':
+      if (user_access('administer content', $account)) {
+        return NODE_ACCESS_ALLOW;
+      }
+      else {
+        $mlid = db_select('menu_links', 'ml')
+          ->fields('ml', array('mlid'))
+          ->condition('link_path', 'node/' . $node->nid)
+          ->execute()
+          ->fetchField();
+        if ($mlid) {
+          $visibility = menu_item_visibility_load($mlid);
+          if (!empty($visibility['roles'])) {
+            $access = _menu_item_check_visibility($visibility['roles'], $account->roles);
+            if ($access == FALSE) {
+              return NODE_ACCESS_DENY;
+            }
+          }
+        }
+        return NODE_ACCESS_ALLOW;
+      }
+      break;
+  }
+}
+
+/**
+ * Helper function to check visibility based on 
+ * menu item access configuration and a users roles
+ */
+function _menu_item_check_visibility($allowed_roles, $user_roles) {
+  $access = TRUE;
+  if (count($user_roles) == 1) {
+    if (!array_intersect($allowed_roles, array_keys($user_roles))) {
+      $access = FALSE;
+    }
+  }
+  else {
+    // User has authenticated role, and something else
+    // remove the authenticated role, and run the array_interest again
+    $roles = array_keys($user_roles);
+    array_splice($roles, array_search(DRUPAL_AUTHENTICATED_RID, $roles), 1);
+    if (!array_intersect($allowed_roles, $roles)) {
+      $access = FALSE;
+    } 
+  }
+  return $access;
 }
