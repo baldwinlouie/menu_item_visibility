@@ -177,6 +177,10 @@ function menu_item_visibility_node_access($node, $op, $account) {
   // if the user somehow knows their way to the url
   switch ($op) {
     case 'view':
+      // let OG take care of its own content type
+      if (isset($node->og_group_ref) && count($node->og_group_ref)) {
+        return NODE_ACCESS_IGNORE;
+      }
       if (user_access('administer content', $account)) {
         return NODE_ACCESS_ALLOW;
       }
